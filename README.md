@@ -1,222 +1,38 @@
-from lfx.custom import Component
-from lfx.io import MessageTextInput, DataFrameInput, Output
-from lfx.schema import Data
+You are an Intelligent Meeting-Room Booking Assistant.
 
-import json
-from datetime import datetime
+Your job is to help employees find and book suitable meeting rooms using the available tools and mock corporate data.
 
+MEETING INFORMATION:
+Collect:
+- date
+- start time
+- end time or duration
+- number of attendees
+- required equipment
+- employee ID when available
+- floor or wing preference when relevant
 
-class BookMeetingRoom(Component):
-    display_name = "Book Meeting Room"
-    description = "Validates a selected room against existing bookings and confirms the booking."
-    icon = "CalendarCheck"
-    name = "BookMeetingRoom"
+SEARCH ROOMS:
+1. When the user wants to find a room, use SEARCH_ROOMS.
+2. SEARCH_ROOMS uses room inventory, employee desk-location data, and existing booking data.
+3. It checks capacity, equipment, availability, employee location, and ranking.
+4. Treat the actual SEARCH_ROOMS result as the source of truth.
+5. Never invent room names, room IDs, capacity, equipment, availability, or employee locations.
+6. If no suitable room is found, clearly tell the user and offer alternatives such as another time, date, attendee count, or equipment requirement.
 
-    inputs = [
-        MessageTextInput(
-            name="booking_request",
-            display_name="Booking Request",
-            info=(
-                "Booking details in JSON format. "
-                "Include room_id, date, start_time, end_time, "
-                "attendees, employee_id, and meeting_title."
-            ),
-            tool_mode=True,
-        ),
-        DataFrameInput(
-            name="bookings_data",
-            display_name="Room Bookings",
-            info="Existing room bookings from Room_Bookings.csv.",
-        ),
-    ]
+BOOK ROOM:
+1. Only use BOOK_ROOM after the user has selected a specific room from the SEARCH_ROOMS results.
+2. Do not book a room that was not returned by SEARCH_ROOMS.
+3. Pass the selected room ID and the original meeting details to BOOK_ROOM.
+4. BOOK_ROOM checks the existing bookings again for a time conflict.
+5. If BOOK_ROOM rejects the request because of a conflict, do not claim the booking was successful.
+6. If BOOK_ROOM returns a successful confirmation, tell the user that the booking was confirmed by the booking tool.
+7. Never claim a booking was successful without a successful BOOK_ROOM result.
 
-    outputs = [
-        Output(
-            name="result",
-            display_name="Booking Result",
-            method="book_room",
-        )
-    ]
-
-    def _time_to_minutes(self, value):
-        text = str(value).strip()
-
-        for fmt in ("%H:%M", "%H:%M:%S"):
-            try:
-                dt = datetime.strptime(text, fmt)
-                return dt.hour * 60 + dt.minute
-            except ValueError:
-                pass
-
-        return None
-
-    def book_room(self) -> Data:
-        try:
-            request = self.booking_request
-
-            if isinstance(request, dict):
-                booking = request
-            else:
-                booking = json.loads(str(request))
-
-            required_fields = [
-                "room_id",
-                "date",
-                "start_time",
-                "end_time",
-                "attendees",
-            ]
-
-            missing = [
-                field for field in required_fields
-                if field not in booking or booking[field] in ("", None)
-            ]
-
-            if missing:
-                return Data(
-                    value={
-                        "success": False,
-                        "message": (
-                            "Missing required booking information: "
-                            + ", ".join(missing)
-                        ),
-                    }
-                )
-
-            room_id = str(booking["room_id"]).strip()
-            date = str(booking["date"]).strip()
-            start_time = str(booking["start_time"]).strip()
-            end_time = str(booking["end_time"]).strip()
-
-            requested_start = self._time_to_minutes(start_time)
-            requested_end = self._time_to_minutes(end_time)
-
-            if requested_start is None or requested_end is None:
-                return Data(
-                    value={
-                        "success": False,
-                        "message": "Invalid time format. Use HH:MM.",
-                    }
-                )
-
-            if requested_end <= requested_start:
-                return Data(
-                    value={
-                        "success": False,
-                        "message": "End time must be after start time.",
-                    }
-                )
-
-            bookings_df = self.bookings_data
-
-            if bookings_df is None:
-                return Data(
-                    value={
-                        "success": False,
-                        "message": "Existing booking data is not available.",
-                    }
-                )
-
-            # Check existing bookings for the same room and date.
-            conflicts = []
-
-            for _, row in bookings_df.iterrows():
-                existing_room = str(row.get("room_id", "")).strip()
-                existing_date = str(row.get("date", "")).strip()
-                status = str(row.get("status", "")).strip().lower()
-
-                if existing_room != room_id:
-                    continue
-
-                if existing_date != date:
-                    continue
-
-                # Confirmed and tentative bookings block the room.
-                if status not in ("confirmed", "tentative"):
-                    continue
-
-                existing_start = self._time_to_minutes(
-                    row.get("start_time", "")
-                )
-                existing_end = self._time_to_minutes(
-                    row.get("end_time", "")
-                )
-
-                if existing_start is None or existing_end is None:
-                    continue
-
-                # Standard interval-overlap check.
-                if (
-                    requested_start < existing_end
-                    and requested_end > existing_start
-                ):
-                    conflicts.append(
-                        {
-                            "start_time": str(row.get("start_time", "")),
-                            "end_time": str(row.get("end_time", "")),
-                            "status": str(row.get("status", "")),
-                            "meeting_title": str(
-                                row.get("meeting_title", "")
-                            ),
-                        }
-                    )
-
-            if conflicts:
-                return Data(
-                    value={
-                        "success": False,
-                        "booking_status": "REJECTED",
-                        "room_id": room_id,
-                        "date": date,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "message": (
-                            f"Room {room_id} is not available for the "
-                            f"requested time because it has an overlapping "
-                            f"booking."
-                        ),
-                        "conflicts": conflicts,
-                    }
-                )
-
-            # No conflict found.
-            confirmation = {
-                "success": True,
-                "booking_status": "CONFIRMED",
-                "room_id": room_id,
-                "date": date,
-                "start_time": start_time,
-                "end_time": end_time,
-                "attendees": booking["attendees"],
-                "employee_id": booking.get("employee_id", ""),
-                "meeting_title": booking.get(
-                    "meeting_title",
-                    "Meeting Room Booking"
-                ),
-                "message": (
-                    f"Room {room_id} is available and the booking "
-                    f"can be confirmed."
-                ),
-            }
-
-            self.status = confirmation
-
-            return Data(value=confirmation)
-
-        except json.JSONDecodeError:
-            return Data(
-                value={
-                    "success": False,
-                    "message": (
-                        "Booking request must be valid JSON."
-                    ),
-                }
-            )
-
-        except Exception as exc:
-            return Data(
-                value={
-                    "success": False,
-                    "message": f"Booking validation failed: {str(exc)}",
-                }
-            )
+GENERAL RULES:
+- Always use SEARCH_ROOMS for room availability searches.
+- Always use BOOK_ROOM when the user explicitly selects a room and asks to book it.
+- Do not skip the tools when actual room availability or booking is requested.
+- Do not invent missing information.
+- If date, start time, end time, or attendee count is missing, ask the user for it.
+- Keep responses concise and clear.
