@@ -1,42 +1,129 @@
-You are an Intelligent Meeting Room Booking Assistant.
+1. Team & Use Case
 
-Your job is to help employees search for and book meeting rooms.
+Use Case: Intelligent Meeting-Room Booking Assistant
 
-For every meeting request, collect:
-- meeting date
-- start time
-- end time
-- number of attendees
-- required equipment
-- employee ID
-- meeting title, if provided
+Problem: Employees spend time manually searching for suitable meeting rooms and may select rooms that are too far away, lack required equipment, or are already booked.
 
-Use the SEARCH_ROOMS tool whenever the user is looking for an available room.
+Solution: An agentic meeting-room assistant that understands natural-language meeting requests, searches room/employee/booking data, ranks suitable rooms, and books the selected room while preventing booking conflicts.
 
-When calling SEARCH_ROOMS, provide the meeting requirements accurately. Do not invent or assume an employee ID, room, availability, capacity, equipment, date, or time.
+⸻
 
-SEARCH_ROOMS returns rooms that satisfy the requested capacity, equipment, availability, and employee-location criteria.
+2. Solution Flow
 
-After SEARCH_ROOMS:
-- Present the returned rooms clearly.
-- Mention room name, room ID, floor, wing, capacity and relevant equipment.
-- Do not recommend rooms that were not returned by the tool.
-- If no rooms are returned, explain that no matching room is available for the requested criteria.
-- Do not invent alternative dates or times unless the user asks for alternatives.
+Put your actual Langflow canvas screenshot here.
 
-When the user selects a room, use the BOOK_ROOM tool to attempt the booking.
+Under the screenshot:
 
-Before booking, make sure the selected room and meeting details come from the user's request or previous tool results.
+Flow:
 
-If BOOK_ROOM reports a conflict or failure:
-- Clearly explain the reason returned by the tool.
-- Do not claim the booking was successful.
-- Ask the user whether they want to search again or change the requirements.
+User → Agent → Meeting Room Search → Room/Employee/Booking Data → Ranked Recommendations → Book Meeting Room → Confirmation
 
-If BOOK_ROOM succeeds:
-- Confirm the booking.
-- Show room, date, time, attendees, equipment, employee ID and meeting title.
+* Agent interprets the user’s meeting requirements.
+* SEARCH_ROOMS filters rooms using capacity, equipment and availability.
+* Employee desk information is used for location-based ranking.
+* Suitable rooms are ranked using deterministic scoring.
+* BOOK_ROOM validates the selected room against existing bookings before confirming the booking.
 
-Never claim that a room is booked unless BOOK_ROOM confirms the booking.
 
-Keep responses concise and professional.
+Criterion
+
+Logic
+
+Capacity
+
+Room must accommodate all attendees
+
+Required equipment
+
+Hard filter — requested equipment must be available
+
+Availability
+
+Hard filter — room must be free for the complete requested time
+
+Distance
+
+Rooms closer to the employee’s floor/wing receive a higher score
+
+Capacity fit
+
+Better-sized rooms receive a higher score
+
+Final score
+
+Distance score + capacity score
+
+Ranking
+
+Eligible rooms are sorted by final score and top rooms are recommended
+
+Key design principle: Hard constraints are applied before scoring, so the agent does not recommend unavailable or unsuitable rooms
+
+4. Arize Phoenix / Observability Metrics
+
+Since Phoenix isn’t actually connected, don’t claim that these are Phoenix-generated metrics.
+
+Use this wording:
+
+Observability: Langflow Flow Activity was used for execution tracing and validation. The system captured 82 flow runs with trace IDs, latency, token usage, inputs/outputs and individual tool/component spans.
+
+Observed metrics from functional testing:
+
+Metric
+
+Result
+
+Flow runs captured
+
+82
+
+End-to-end latency observed
+
+2.92–11.04 sec
+
+Example full agent trace
+
+11.04 sec
+
+Example token usage
+
+38,052 tokens
+
+Tool calls traced
+
+search_rooms, book_room
+
+Successful booking tests
+
+Passed
+
+Booking conflict detection
+
+Passed
+
+Capacity constraint
+
+Passed
+
+Automatic room selection
+
+Passed
+
+5. Target Metrics Achieved
+
+   Target
+
+Result
+
+Average booking/search time ≤ 10 sec
+
+~6.2 sec observed average across representative tests
+
+Reduce double bookings ≥ 90%
+
+Conflict prevention validated through functional tests; percentage reduction not measured against a historical baseline
+
+Appropriate-room success ≥ 90%
+
+100% in tested eligible scenarios
+
