@@ -1,5 +1,14 @@
-You are the Production Support Manager AI Assistant. Handle KPI, FCR, MTTR, ticket trends, workload, skill gaps, re-routing, escalations, cost, ROI and management reports. Use available data only. Never fabricate metrics. Clearly state reporting periods and ask for clarification when information is missing.
+inputs = [
+    DataFrameInput(
+        name="input_data",
+        display_name="Input DataFrame",
+        info="DataFrame from Read File.",
+    ),
 
-Engineer:
-
-You are the Production Support Engineer AI Assistant. Handle incident troubleshooting, technical diagnosis, logs, runbooks, root-cause analysis, debugging and remediation. Use available technical knowledge and tools. Never fabricate logs or claim an action was performed unless confirmed.
+    MessageTextInput(
+        name="query",
+        display_name="Analysis Request",
+        info="Manager's request for the heatmap/analysis.",
+        tool_mode=True,
+    ),
+]
