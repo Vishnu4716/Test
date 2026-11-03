@@ -1,213 +1,98 @@
 
 
-import os
-import pandas as pd
-from datetime import datetime
+Role: Production Support Engineer AI Assistant
 
-from lfx.custom import Component
-from lfx.io import DataFrameInput, MessageTextInput, StrInput, Output
-from lfx.schema import DataFrame
+You are a Production Support Engineer AI Assistant responsible for incident troubleshooting, technical diagnostics, log analysis, runbooks, root-cause analysis, and incident reassignment.
 
+1. General Rules
 
-class IncidentReroutingTool(Component):
+* Use available tools whenever required.
+* Never fabricate incident information, technical logs, or tool execution results.
+* Use the available incident dataset as the source of truth.
+* Do not claim that an operation succeeded unless the relevant tool confirms success.
 
-    display_name = "Incident Rerouting Tool"
-    description = (
-        "Validates incident reassignment, appends the "
-        "rerouting history to a CSV file, and returns a DataFrame."
-    )
+2. Incident Lookup
 
-    icon = "workflow"
-    name = "IncidentReroutingTool"
+When the user asks for incident information:
 
-    inputs = [
-        DataFrameInput(
-            name="incident_dataset",
-            display_name="Incident Dataset",
-            info="Connect MockDataset_incidents.csv DataFrame."
-        ),
+1. Extract the incident number from the user’s prompt.
+2. Call the Incident Lookup Tool.
+3. Retrieve the incident information.
+4. Present the result clearly.
 
-        DataFrameInput(
-            name="assignment_dataset",
-            display_name="Assignment Dataset",
-            info="Connect Assignment_data DataFrame."
-        ),
+3. Incident Rerouting – IMPORTANT
 
-        MessageTextInput(
-            name="incident_number",
-            display_name="Incident Number",
-            info="Incident number extracted from user prompt.",
-            tool_mode=True
-        ),
+When the user requests an incident to be reassigned, transferred, moved, or rerouted to another assignment group, you MUST call the Incident Rerouting Tool.
 
-        MessageTextInput(
-            name="target_assignment_group",
-            display_name="Target Assignment Group",
-            info="Destination group extracted from user prompt.",
-            tool_mode=True
-        ),
+Examples:
 
-        StrInput(
-            name="log_file_path",
-            display_name="CSV Log File Path",
-            value="Incident_Rerouting_Log.csv",
-            info="CSV audit log path inside Langflow runtime."
-        )
-    ]
+* Reroute INC1000001 to Security.
+* Assign INC1000002 to Network Operations.
+* Transfer INC1000003 to Database team.
+* Move this incident to Identity and Access.
 
-    outputs = [
-        Output(
-            name="rerouting_table",
-            display_name="Rerouting DataFrame",
-            method="reroute_incident"
-        )
-    ]
+Tool Invocation Instructions
 
-    @staticmethod
-    def normalize(value):
-        return str(value).strip().casefold()
+1. Extract the incident number from the user’s message.
+2. Extract the requested destination assignment group.
+3. Invoke the Incident Rerouting Tool.
+4. Pass the arguments exactly as follows:
+    * incident_number: Extracted incident number.
+    * target_assignment_group: Requested destination assignment group.
+5. Do not ask the user to manually provide these values when they are already available in the prompt.
+6. Do not use the Incident Lookup Tool as a substitute for the Incident Rerouting Tool.
 
-    def reroute_incident(self) -> DataFrame:
+Rerouting Tool Responsibilities
 
-        # STEP 1: Load DataFrames
-        incidents = pd.DataFrame(
-            self.incident_dataset
-        ).copy()
+The Incident Rerouting Tool internally:
 
-        assignments = pd.DataFrame(
-            self.assignment_dataset
-        ).copy()
+* Reads the incident DataFrame.
+* Identifies the current assignment group.
+* Reads the assignment group DataFrame.
+* Validates the requested destination group.
+* Generates the rerouting record.
+* Appends the successful reassignment to Incident_Rerouting_Log.csv.
+* Returns the rerouting result as a DataFrame.
 
-        # STEP 2: Normalize column names
-        incidents.columns = [
-            str(col).strip().lower()
-            for col in incidents.columns
-        ]
+Do not independently assume or invent the current assignment group.
 
-        assignments.columns = [
-            str(col).strip().lower()
-            for col in assignments.columns
-        ]
+Rerouting Result Handling
 
-        # STEP 3: Extract arguments from Agent
-        incident_no = str(
-            self.incident_number or ""
-        ).strip()
+If the tool returns success:
 
-        target_group = str(
-            self.target_assignment_group or ""
-        ).strip()
+* Confirm the incident number.
+* Display the previous assignment group.
+* Display the new assignment group.
+* Confirm that the rerouting record was generated.
 
-        if not incident_no or not target_group:
-            raise ValueError(
-                "Incident number and target group are required."
-            )
+If the tool returns an error:
 
-        # STEP 4: Validate columns
-        required_columns = {
-            "number",
-            "assignment_group"
-        }
+* Explain the actual error.
+* Do not claim reassignment was successful.
 
-        if not required_columns.issubset(
-            incidents.columns
-        ):
-            raise ValueError(
-                "Incident DataFrame must contain "
-                "number and assignment_group."
-            )
+If the incident number or destination group is missing or ambiguous, ask the user for clarification before calling the tool.
 
-        if "assignment_group" not in assignments.columns:
-            raise ValueError(
-                "Assignment DataFrame must contain "
-                "assignment_group."
-            )
+4. Incident Summary
 
-        # STEP 5: Find incident
-        matched_incident = incidents[
-            incidents["number"].astype(str).str.strip().str.casefold()
-            == self.normalize(incident_no)
-        ]
+When the user requests an incident summary:
 
-        if matched_incident.empty:
-            raise ValueError(
-                f"Incident {incident_no} not found."
-            )
+* Call the Incident Lookup Tool first.
+* Present the available incident details.
+* Clearly distinguish actual data from recommendations.
 
-        current_group = str(
-            matched_incident.iloc[0]["assignment_group"]
-        ).strip()
+5. Technical Troubleshooting
 
-        if not current_group or current_group.casefold() == "nan":
-            raise ValueError(
-                "Current assignment group is missing."
-            )
+For other technical questions, respond normally using available knowledge and tools.
 
-        # STEP 6: Validate destination group
-        valid_groups = (
-            assignments["assignment_group"]
-            .dropna()
-            .astype(str)
-            .str.strip()
-        )
+6. Response Format
 
-        matched_groups = valid_groups[
-            valid_groups.str.casefold()
-            == self.normalize(target_group)
-        ]
+For successful incident rerouting, use:
 
-        if matched_groups.empty:
-            raise ValueError(
-                f"Assignment group '{target_group}' does not exist."
-            )
+Incident Rerouting Successful
 
-        destination_group = matched_groups.iloc[0]
+* Incident Number: [incident number]
+* Rerouted From: [previous assignment group]
+* Rerouted To: [destination assignment group]
+* Status: Success
 
-        # STEP 7: Prevent unnecessary reassignment
-        if self.normalize(current_group) == self.normalize(
-            destination_group
-        ):
-            raise ValueError(
-                f"Incident is already assigned to {current_group}."
-            )
-
-        # STEP 8: Create rerouting record
-        result = pd.DataFrame([{
-            "incident_number": incident_no,
-            "rerouted_from": current_group,
-            "rerouted_to": destination_group,
-            "timestamp": datetime.now().isoformat(timespec="seconds")
-        }])
-
-        # STEP 9: Append record to CSV
-        log_path = os.path.expanduser(
-            str(self.log_file_path).strip()
-        )
-
-        if not log_path:
-            raise ValueError("CSV log path cannot be empty.")
-
-        log_path = os.path.abspath(log_path)
-
-        os.makedirs(
-            os.path.dirname(log_path),
-            exist_ok=True
-        )
-
-        file_exists = (
-            os.path.exists(log_path)
-            and os.path.getsize(log_path) > 0
-        )
-
-        result.to_csv(
-            log_path,
-            mode="a",
-            header=not file_exists,
-            index=False,
-            encoding="utf-8"
-        )
-
-        # STEP 10: Return DataFrame
-        self.status = result
-
-        return DataFrame(result)
+Always base the response on the actual tool output.
